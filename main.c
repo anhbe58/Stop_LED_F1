@@ -14,7 +14,7 @@ const unsigned int led_array[6][20] = {
 	{100,500, 100,500, 100,500, 4000,500, 100,500, 100,500, 100,500, 4000,0, 0,0, 0,500},
 	{100,500, 100,500, 100,500, 100,500, 0,2000, 100,500, 100,500, 100,500, 0,1000, 0,1000},
 	{100,500, 100,500, 4000,500, 100,500, 100,500, 4000,500, 100,500, 100,500, 0,0, 4000,500},	
-	{30000,5000, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0}
+	{1000,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0}
 };
 
 void delay100ms(void){
@@ -105,15 +105,21 @@ void main(){
 			}	
 			led_mode = LED.default_led;			
 		}
-		if((timer - timer_capture > 15000) && (button_count > 0)) {
+		if((timer - timer_capture > 25000) && (button_count > 0)) {
 			//led_mode++;
 			//if(led_mode > 5) led_mode = 0;
 			switch(button_count){				
 				case 5:
 					LED.default_led++;
-					if(LED.default_led > 5) LED.default_led = 0;
+					if(LED.default_led > 4) LED.default_led = 0;
 					write_eeprom(LED.data_epprom);
 					led_mode = LED.default_led;
+					button_count = 0;
+					break;
+				case 7:
+					LED.stop_led++;					
+					if(LED.stop_led > 5) LED.stop_led = 0;
+					write_eeprom(LED.data_epprom);					
 					button_count = 0;
 					break;
 				default:
