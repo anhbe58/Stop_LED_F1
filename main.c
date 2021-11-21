@@ -1,25 +1,34 @@
 #include "ch552.h"
 #include <stdint.h>
+union {
+	struct {
+		unsigned char default_led: 4;
+		unsigned char stop_led: 4;
+	};
+	unsigned char data_epprom;
+} LED;
 void delay100ms(void);
 const unsigned int led_array[6][20] = {
-	{100,1000, 100,1000, 100,1000, 100,1000, 100,1000, 0,1000, 0,1000, 0,1000, 0,1000, 0,1000},
-	{100,500, 100,500, 100,500, 100,500, 0,2000, 100,500, 100,500, 100,500, 0,1000, 0,1000},
-	{100,500, 100,500, 100,500, 4000,500, 100,500, 100,500, 100,500, 4000,0, 0,0, 0,500},
-	{100,500, 100,500, 4000,500, 100,500, 100,500, 4000,500, 100,500, 100,500, 0,0, 4000,500},
+	{1000,100, 1000,100, 1000,100, 1000,100, 1000,100, 1000,0, 1000,0, 1000,0, 1000,0, 1000,0},
 	{100,100, 100,100, 100,100, 500,500, 500,500, 0,1000, 0,0, 0,0, 0,0, 0,0},
-	{30000,5000, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0}
+	{100,500, 100,500, 100,500, 4000,500, 100,500, 100,500, 100,500, 4000,0, 0,0, 0,500},
+	{100,500, 100,500, 100,500, 100,500, 0,2000, 100,500, 100,500, 100,500, 0,1000, 0,1000},
+	{100,500, 100,500, 4000,500, 100,500, 100,500, 4000,500, 100,500, 100,500, 0,0, 4000,500},	
+	{1000,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0, 0,0}
 };
 
 void delay100ms(void){
 	uint32_t i;
-	for(i = 0;i < 0x003FF; i++){
-	}
+	for(i = 0;i < 0x0000F; i++){
+	} 
 }
-unsigned char led_time_index = 0, led_mode = 5, button_count = 0;
+unsigned char led_time_index = 0, led_mode = 4, button_count = 0, stop_led = 0;
+unsigned long timer = 0, timer_capture = 0;
 volatile unsigned int led = 0;
 void Timer2_ISR(void) __interrupt (5)
 {
 	led++;
+	timer++;
 	if(led > led_array[led_mode][led_time_index]) {	
 		led = 0;
 		led_time_index++;
@@ -28,6 +37,21 @@ void Timer2_ISR(void) __interrupt (5)
 		if(led_time_index > 19) led_time_index = 0;
 		
 	}
+}
+void write_eeprom(unsigned char index, unsigned char data){
+	SAFE_MOD = 0x55;
+	SAFE_MOD = 0xAA;
+	GLOBAL_CFG |= bDATA_WE;
+	ROM_ADDR = 0xC000 + index;
+	ROM_DATA_L = data;
+	ROM_CTRL = ROM_CMD_WRITE;
+	SAFE_MOD = 0x00;
+	GLOBAL_CFG &= ~bDATA_WE;
+}
+unsigned char read_eeprom(unsigned char index){
+	ROM_ADDR = 0xC000 + index;
+	ROM_CTRL = ROM_CMD_READ;
+	return (unsigned char) ROM_DATA_L;
 }
 void main(){
 	/* Fsys = 750kHz */
@@ -61,21 +85,62 @@ void main(){
 	P3_DIR_PU &= ~(1 << 0);
 	
 	P1 |= (1 << 5);
-	uint8_t trigger_pin = 0;
+	delay100ms();
+	if((P3 >> 0) & 1){
+		delay100ms();
+		if((P3 >> 0) & 1){}
+	} else {
+		led_mode = read_eeprom(2);		
+		if(led_mode == 0xFF) {
+			led_mode = read_eeprom(4);
+			write_eeprom(4, led_mode + 1);
+			led_mode = 0;
+		} else {
+			led_mode++;
+		}
+		write_eeprom(2, led_mode);
+	}
+	LED.data_epprom = read_eeprom(0);
+	led_mode = LED.default_led;
+	if(led_mode > 5) {
+		led_mode = 0; write_eeprom(0, 0);
+	}
 	while(1){
-		//if(TF2 == 1){			
-			
-		//}
-		// if((P3 >> 0) & 1){
-			// delay100ms();
-			// if((P3 >> 0) & 1){
-				// P1 ^= (1 << 5);
-			// }
-			// while((P3 >> 0) & 1){
+		if((P3 >> 0) & 1){
+			delay100ms();
+			if((P3 >> 0) & 1){
+				if(button_count == 0) timer_capture = timer;
+				button_count++;				
+			}
+			while((P3 >> 0) & 1){
 				// P1 ^= (1 << 5);
 				// delay100ms();
-			// }
-		// }
+				led_mode = LED.stop_led;
+			}	
+			led_mode = LED.default_led;			
+		}
+		if((timer - timer_capture > 30000) && (button_count > 0)) {
+			//led_mode++;
+			//if(led_mode > 5) led_mode = 0;
+			switch(button_count){				
+				case 5:
+					LED.default_led++;
+					if(LED.default_led > 4) LED.default_led = 0;
+					write_eeprom(0, LED.data_epprom);
+					led_mode = LED.default_led;
+					button_count = 0;
+					break;
+				case 7:
+					LED.stop_led++;					
+					if(LED.stop_led > 5) LED.stop_led = 0;
+					write_eeprom(0, LED.data_epprom);					
+					button_count = 0;
+					break;
+				default:
+					button_count = 0;
+					break;
+			}
+		}
 		//P1 |= (1 << 5);
 		
 		// delay100ms();
